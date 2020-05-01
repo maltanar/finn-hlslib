@@ -52,7 +52,6 @@
 #define MAX(x, y) (((x) > (y)) ? (x) : (y)) /* \brief Maximum value between x and y*/
 #define MIN(x, y) (((x) > (y)) ? (y) : (x)) /* !< \brief Minimum value between x and y*/
 
-
 /**
  * \brief Sliding Window unit that produces output vectors for feeding
  * a Matrix_Vector_Activate_Batch, implementing the im2col algorithm. To be used only if 
@@ -88,7 +87,6 @@ void ConvolutionInputGenerator(
   ap_uint<SIMD*Input_precision> inputBuf[number_blocks][Stride * IFMDim * multiplying_factor];
 
 #pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=1
-#pragma HLS RESOURCE variable inputBuf core=RAM_2P
   const unsigned int cycles_write_block = (OFMDim * ConvKernelDim * ConvKernelDim * multiplying_factor);
   const unsigned int cycles_read_block = Stride * IFMDim * multiplying_factor;
   const unsigned int max_cycles = MAX(cycles_write_block,cycles_read_block);
