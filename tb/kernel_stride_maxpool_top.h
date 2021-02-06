@@ -29,38 +29,22 @@
  *  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
-/******************************************************************************
- *
- *  Authors: Giulio Gambardella <giuliog@xilinx.com>
- *
- *  \file input_gen_kernelstride.cpp
- *
- *  HLS Top function with a single HLS sliding-window generator block (when kernel%stride !=0) unit testing
- *
- *****************************************************************************/
+
 #include <hls_stream.h>
 using namespace hls;
 #include "ap_int.h"
 #include "bnn-library.h"
-#include "input_gen_kernelstride.h"
+#include "pool.hpp"
 
-void Testbench(stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & in, stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & out, unsigned int numReps)
-{
-#pragma HLS DATAFLOW
-stream<ap_uint<SIMD*INPUT_PRECISION> > in_simd("in_simd");
-stream<ap_uint<SIMD*INPUT_PRECISION> > out_simd("out_simd");
+#define KERNEL_DIM 3 
+#define FM_Channels1 16
+#define IFMDim1 16
+#define PADDING 2
+#define PoolInDim1 (IFMDim1+PADDING)
+#define STRIDE 2
+#define OFMDim1  (IFMDim1/STRIDE) //Using padding
+#define INPUT_PRECISION 4
+#define PE1 4
 
-StreamingDataWidthConverter_Batch<IFM_Channels*INPUT_PRECISION, SIMD*INPUT_PRECISION, IFMDim*IFMDim>(in, in_simd, numReps);
-
-ConvolutionInputGenerator_kernel_stride<KERNEL_DIM,
-	IFM_Channels,
-	INPUT_PRECISION,
-	IFMDim, 
-	OFMDim, 
-	SIMD,
-	STRIDE>(in_simd, out_simd, numReps, ap_resource_dflt());
-	
-StreamingDataWidthConverter_Batch<SIMD*INPUT_PRECISION, IFM_Channels*INPUT_PRECISION, KERNEL_DIM*KERNEL_DIM*OFMDim*OFMDim*IFM_Channels/SIMD>(out_simd, out, numReps);
-
-}
-
+void Testbench_kernel_stride_pool(stream<ap_uint<FM_Channels1*INPUT_PRECISION> > & in, 
+                stream<ap_uint<FM_Channels1*INPUT_PRECISION> > & out, unsigned int numReps);

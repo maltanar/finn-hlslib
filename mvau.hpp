@@ -136,6 +136,7 @@ void Matrix_Vector_Activate_Batch(hls::stream<TI> &in,
     // Threshold Initialisation
     if(sf == 0) {
       for(unsigned  pe = 0; pe < PE; pe++) {
+#pragma HLS UNROLL
         for(unsigned mmv = 0; mmv < MMV; mmv++) {
 #pragma HLS UNROLL
           accu[mmv][pe] = activation.init(nf, pe);
@@ -263,7 +264,7 @@ void Matrix_Vector_Activate_Stream_Batch(hls::stream<TI> &in,
     W_packed = weight.read();
     for (unsigned pe = 0; pe < PE; pe++) {
 #pragma HLS UNROLL
-      w.m_weights[PE - pe - 1] = W_packed((pe+1)*SIMD*TW::width-1,pe*SIMD*TW::width);
+      w.m_weights[pe] = W_packed((pe+1)*SIMD*TW::width-1,pe*SIMD*TW::width);
     }
 
     // Threshold Initialisation

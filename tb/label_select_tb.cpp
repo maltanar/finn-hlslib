@@ -31,36 +31,80 @@
  ******************************************************************************/
 /******************************************************************************
  *
- *  Authors: Giulio Gambardella <giuliog@xilinx.com>
+ *  Authors: Tobias Alonso <tobiasa@xilinx.com>
  *
- *  \file input_gen_kernelstride.cpp
+ *  \file label_select_tb.cpp
  *
- *  HLS Top function with a single HLS sliding-window generator block (when kernel%stride !=0) unit testing
+ *  Testbench for the LabelSelect_Batch layer 
  *
  *****************************************************************************/
+
+#include <iostream>
+#include <cmath>
+#include <ctime>
+#include <cstring>
 #include <hls_stream.h>
-using namespace hls;
+#include <cstdlib>
+#define AP_INT_MAX_W 16384
 #include "ap_int.h"
+#include "weights.hpp"
 #include "bnn-library.h"
-#include "input_gen_kernelstride.h"
 
-void Testbench(stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & in, stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & out, unsigned int numReps)
-{
-#pragma HLS DATAFLOW
-stream<ap_uint<SIMD*INPUT_PRECISION> > in_simd("in_simd");
-stream<ap_uint<SIMD*INPUT_PRECISION> > out_simd("out_simd");
+#include "label_select_top.h"
 
-StreamingDataWidthConverter_Batch<IFM_Channels*INPUT_PRECISION, SIMD*INPUT_PRECISION, IFMDim*IFMDim>(in, in_simd, numReps);
+using namespace hls;
+using namespace std;
 
-ConvolutionInputGenerator_kernel_stride<KERNEL_DIM,
-	IFM_Channels,
-	INPUT_PRECISION,
-	IFMDim, 
-	OFMDim, 
-	SIMD,
-	STRIDE>(in_simd, out_simd, numReps, ap_resource_dflt());
-	
-StreamingDataWidthConverter_Batch<SIMD*INPUT_PRECISION, IFM_Channels*INPUT_PRECISION, KERNEL_DIM*KERNEL_DIM*OFMDim*OFMDim*IFM_Channels/SIMD>(out_simd, out, numReps);
+#define MAX_IMAGES 2
 
+int main(int argc, char const *argv[])
+{   
+    
+    int sig_in_vec[10] = {-12043, 30370, -23559, -30747, -11173, 30686, 19723, 
+                            -8171, -16169, 809};
+    int sig_in_golden[10] = {5, 1, 6, 9, 7, 4, 0, 8, 2, 3};
+
+    uint unsig_in_vec[10] = {12043, 30370, 23559, 30747, 11173, 30686, 19723, 
+                            8171, 16169, 809};
+    uint unsig_in_golden[10] = {3, 5, 1, 2, 6, 8, 0, 4, 7, 9};
+
+    hls::stream<ap_uint<INPUT_PRECISION>> input_st;
+    hls::stream<Out_T> output_st;
+    for (int batch = 0; batch < MAX_IMAGES; ++batch){
+        for (int i = 0; i < FM_Channels1; ++i)
+        {   
+            #if SIGNED_INPUT
+                input_st.write(sig_in_vec[i]);
+            #else
+                input_st.write(unsig_in_vec[i]);
+            #endif
+        }
+    }
+    
+
+    Testbench_label_select(input_st, output_st, MAX_IMAGES);
+
+    int err_cnt = 0;
+
+    for (int batch = 0; batch < MAX_IMAGES; ++batch){
+        for (int i = 0; i < NumTop; ++i)
+        {
+            Out_T outElem = output_st.read();
+
+            #if SIGNED_INPUT
+                int expected = sig_in_golden[i];
+            #else
+                uint expected = unsig_in_golden[i];
+            #endif
+
+            if (outElem != expected){
+                cout<<"ERROR: top "<<i+1<<" was expected to be "<< expected <<
+                    " but got "<<outElem <<endl;
+                err_cnt++;
+            }
+
+        }
+    }
+
+    return err_cnt;
 }
-

@@ -57,6 +57,7 @@ The library serves as a hardware backend for the FINN project, and it integrates
   library/mac
   library/mmv
   library/vectorvector 
+  library/pool 
 
 Indices and tables
 ==================

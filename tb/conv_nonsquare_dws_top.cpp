@@ -33,34 +33,39 @@
  *
  *  Authors: Giulio Gambardella <giuliog@xilinx.com>
  *
- *  \file input_gen_kernelstride.cpp
+ *  \file conv_top.cpp
  *
- *  HLS Top function with a single HLS sliding-window generator block (when kernel%stride !=0) unit testing
+ *  HLS Top function with a single convolutional layer for unit testing
  *
  *****************************************************************************/
 #include <hls_stream.h>
 using namespace hls;
 #include "ap_int.h"
 #include "bnn-library.h"
-#include "input_gen_kernelstride.h"
 
-void Testbench(stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & in, stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & out, unsigned int numReps)
-{
+#include "activations.hpp"
+#include "weights.hpp"
+#include "activations.hpp"
+#include "interpret.hpp"
+#include "mvau.hpp"
+#include "conv.hpp"
+#include "memdata_nonsquare_dws.h"
+#include "config_nonsquare_dws.h"
+
+void Testbench_conv_nonsquare_dws(stream<ap_uint<FM_Channels1*INPUT_PRECISION> > & in, stream<ap_uint<FM_Channels1*ACTIVATION_PRECISION> > & out, unsigned int numReps){
 #pragma HLS DATAFLOW
-stream<ap_uint<SIMD*INPUT_PRECISION> > in_simd("in_simd");
-stream<ap_uint<SIMD*INPUT_PRECISION> > out_simd("out_simd");
 
-StreamingDataWidthConverter_Batch<IFM_Channels*INPUT_PRECISION, SIMD*INPUT_PRECISION, IFMDim*IFMDim>(in, in_simd, numReps);
-
-ConvolutionInputGenerator_kernel_stride<KERNEL_DIM,
-	IFM_Channels,
-	INPUT_PRECISION,
-	IFMDim, 
-	OFMDim, 
-	SIMD,
-	STRIDE>(in_simd, out_simd, numReps, ap_resource_dflt());
-	
-StreamingDataWidthConverter_Batch<SIMD*INPUT_PRECISION, IFM_Channels*INPUT_PRECISION, KERNEL_DIM*KERNEL_DIM*OFMDim*OFMDim*IFM_Channels/SIMD>(out_simd, out, numReps);
+  unsigned const InpPerImage = IFMDim1_x*IFMDim1_y;
+  hls::stream<ap_uint<PE1*INPUT_PRECISION> > wa_in("wa_in");
+  hls::stream<ap_uint<PE1*INPUT_PRECISION> > convInp("convInp");
+  hls::stream<ap_uint<PE1*ACTIVATION_PRECISION> > mvOut("mvOut");
+  StreamingDataWidthConverter_Batch<FM_Channels1*INPUT_PRECISION, PE1*INPUT_PRECISION, InpPerImage>(in, wa_in, numReps);
+  ConvolutionInputGenerator_NonSquare_dws<KERNEL_DIM_X, KERNEL_DIM_Y, FM_Channels1, INPUT_PRECISION, IFMDim1_x, IFMDim1_y,
+			OFMDim1_x, OFMDim1_y, PE1,1,1>(wa_in, convInp, numReps, ap_resource_dflt());
+  Vector_Vector_Activate_Batch<FM_Channels1, KERNEL_DIM_X*KERNEL_DIM_Y, PE1, PE1, MMV1, Slice<ap_uint<INPUT_PRECISION> >, Slice<ap_int<16> >, Identity>
+	(static_cast<hls::stream<ap_uint<PE1*INPUT_PRECISION>>&>(convInp),
+	 static_cast<hls::stream<ap_uint<PE1*ACTIVATION_PRECISION>>&>  (mvOut),
+	 PARAM::weights, PassThroughActivation<ap_uint<16>>(), numReps* OFMDim1_x * OFMDim1_y, ap_resource_dsp());
+  StreamingDataWidthConverter_Batch<PE1*ACTIVATION_PRECISION, FM_Channels1*ACTIVATION_PRECISION, OFMDim1_x * OFMDim1_y * (FM_Channels1 / PE1)>(mvOut, out, numReps);
 
 }
-

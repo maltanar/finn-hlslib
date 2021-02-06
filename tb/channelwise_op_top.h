@@ -29,38 +29,61 @@
  *  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  ******************************************************************************/
-/******************************************************************************
- *
- *  Authors: Giulio Gambardella <giuliog@xilinx.com>
- *
- *  \file input_gen_kernelstride.cpp
- *
- *  HLS Top function with a single HLS sliding-window generator block (when kernel%stride !=0) unit testing
- *
- *****************************************************************************/
+
 #include <hls_stream.h>
 using namespace hls;
 #include "ap_int.h"
 #include "bnn-library.h"
-#include "input_gen_kernelstride.h"
 
-void Testbench(stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & in, stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & out, unsigned int numReps)
+#include "activations.hpp"
+#include "weights.hpp"
+#include "interpret.hpp"
+
+
+#define PE 4
+#define IFM_Channels 8
+#define OFM_Channels IFM_Channels
+
+#define IFMDim 3
+#define OFMDim IFMDim
+
+#define BIPO_PARAM_TYPE ap_uint<1>
+#define ADD_PARAM_TYPE ap_int<3> 
+#define MULT_PARAM_TYPE ap_int<3>
+#define BIPOLAR_INIT {{1,1},{1,0},{0,1},{1,1}}
+#define ADD_INIT {{ 2, 1},{ 0,-1},{-1,-3},{ 1, 1}} 
+#define MULT_INIT {{ 3, 1}, { 2,-1}, {-1, 1}, { 1,-2}} 
+
+#define INPUT_BITS 4
+#define BIPO_OUT_BITS  (INPUT_BITS+1)
+#define ADD_OUT_BITS  (BIPO_OUT_BITS+1)
+#define MULT_OUT_BITS  (ADD_OUT_BITS+2)
+#define OUTPUT_BITS MULT_OUT_BITS
+
+#define IN_T ap_uint
+#define BIPO_OUT_TYPE  ap_int<BIPO_OUT_BITS>
+#define ADD_OUT_TYPE  ap_int<ADD_OUT_BITS>
+#define MULT_OUT_TYPE  ap_int<MULT_OUT_BITS>
+#define OUT_T ap_int
+
+#define FOLD (OFM_Channels/PE)
+
+
+
+
+const int bipolar_init[PE][FOLD] = BIPOLAR_INIT;
+const int add_init[PE][FOLD] = ADD_INIT;
+const int mult_init[PE][FOLD] = MULT_INIT;
+
+template<typename T>
+struct per_channel_neg
 {
-#pragma HLS DATAFLOW
-stream<ap_uint<SIMD*INPUT_PRECISION> > in_simd("in_simd");
-stream<ap_uint<SIMD*INPUT_PRECISION> > out_simd("out_simd");
+    constexpr T operator()(const ap_uint<1> &lhs, const T &rhs) const {
+        return lhs? static_cast<decltype(-rhs)>(rhs):-rhs;
+    }
+    
+};
 
-StreamingDataWidthConverter_Batch<IFM_Channels*INPUT_PRECISION, SIMD*INPUT_PRECISION, IFMDim*IFMDim>(in, in_simd, numReps);
 
-ConvolutionInputGenerator_kernel_stride<KERNEL_DIM,
-	IFM_Channels,
-	INPUT_PRECISION,
-	IFMDim, 
-	OFMDim, 
-	SIMD,
-	STRIDE>(in_simd, out_simd, numReps, ap_resource_dflt());
-	
-StreamingDataWidthConverter_Batch<SIMD*INPUT_PRECISION, IFM_Channels*INPUT_PRECISION, KERNEL_DIM*KERNEL_DIM*OFMDim*OFMDim*IFM_Channels/SIMD>(out_simd, out, numReps);
-
-}
-
+void Testbench_channelwise_op(stream<ap_uint<IFM_Channels*INPUT_BITS> > & in, 
+                    stream<ap_uint<OFM_Channels*OUTPUT_BITS> > & out, unsigned int numReps);

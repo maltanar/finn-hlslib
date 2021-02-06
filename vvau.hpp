@@ -57,7 +57,7 @@
  * It is used to implement depth-wise separable convolution
  * 
  * \tparam Channels   Number of channels
- * \tparam Kernel	    Kernel dimension (assumed square)
+ * \tparam Kernel_2   Kernel * Kernel dimension (Kernel ^ 2 if square)
  * \tparam SIMD       Number of input columns computed in parallel
  * \tparam PE         Number of output rows computed in parallel
  * \tparam MMV        Number of output pixels computed in parallel
@@ -78,7 +78,7 @@
  * \param r           Resource type for the hardware implementation of the MAC block
  */
 template<
-  unsigned Channels, unsigned Kernel, unsigned SIMD, unsigned PE, unsigned MMV, 
+  unsigned Channels, unsigned Kernel_2, unsigned SIMD, unsigned PE, unsigned MMV, 
   typename TSrcI = Identity, typename TDstI = Identity, typename TWeightI = Identity,
   typename TI, typename TO, typename TW, typename TA, typename R
 >
@@ -95,12 +95,7 @@ void Vector_Vector_Activate_Batch(hls::stream<TI> &in,
 
   // how many synapse groups each row is split into
   // alternatively: number of horizontal matrix chunks
-  unsigned const  SF = (Channels*Kernel*Kernel) / SIMD;
-  // input vector buffers
-  TI  inputBuf[SF];
-#pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=0
-
-
+  unsigned const  SF = (Channels*Kernel_2) / Channels;
   decltype(activation.init(0,0))  accu[MMV][PE];
 #pragma HLS ARRAY_PARTITION variable=accu complete dim=0
 
@@ -109,21 +104,11 @@ void Vector_Vector_Activate_Batch(hls::stream<TI> &in,
   unsigned  tile = 0; // invariant: tile = nf*SF + sf
   // everything merged into a common iteration space (one "big" loop instead
   // of smaller nested loops) to get the pipelinening the way we want
-  unsigned const TOTAL_FOLD = NF * SF;
+  unsigned const TOTAL_FOLD = NF * SF ;//* Channels/SIMD;
   for(unsigned  i = 0; i < reps * TOTAL_FOLD; i++) {
 #pragma HLS PIPELINE II=1
     TI  inElem;
-    if(nf == 0) {
-      // read input from stream
-      inElem = in.read();
-      // store in appropriate buffer for reuse
-      inputBuf[sf] = inElem;
-    }
-    else {
-      // reuse buffered input
-      inElem = inputBuf[sf];
-    }
-
+    inElem = in.read();
     // Threshold Initialisation
     if(sf == 0) {
       for(unsigned  pe = 0; pe < PE; pe++) {
@@ -141,7 +126,7 @@ void Vector_Vector_Activate_Batch(hls::stream<TI> &in,
       auto const  wgt = TWeightI()(w[pe]);
       for (unsigned mmv = 0; mmv < MMV; mmv++){
         auto const  act = TSrcI()(inElem, mmv);
-		accu[mmv][pe] += mul(wgt[0], act(pe+nf*PE,mmv), r);
+		accu[mmv][pe] += mul(wgt[0], act(pe,mmv), r);
       }
     }
 

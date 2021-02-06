@@ -31,36 +31,48 @@
  ******************************************************************************/
 /******************************************************************************
  *
- *  Authors: Giulio Gambardella <giuliog@xilinx.com>
+ *  Authors: Giulio Gambardella <tobiasa@xilinx.com>
+ *           Tobias Alonso <tobiasa@xilinx.com>
  *
- *  \file input_gen_kernelstride.cpp
+ *  \file kernel_stride_maxpool_top.cpp
  *
- *  HLS Top function with a single HLS sliding-window generator block (when kernel%stride !=0) unit testing
+ *  HLS Top function with a single MaxPool layer with kernel_size%stride !=0 
+ *  for unit testing
  *
  *****************************************************************************/
-#include <hls_stream.h>
-using namespace hls;
-#include "ap_int.h"
-#include "bnn-library.h"
-#include "input_gen_kernelstride.h"
 
-void Testbench(stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & in, stream<ap_uint<IFM_Channels*INPUT_PRECISION> > & out, unsigned int numReps)
-{
+#include "kernel_stride_maxpool_top.h"
+
+void Testbench_kernel_stride_pool(stream<ap_uint<FM_Channels1*INPUT_PRECISION> > & in, 
+                stream<ap_uint<FM_Channels1*INPUT_PRECISION> > & out, unsigned int numReps){
+
 #pragma HLS DATAFLOW
-stream<ap_uint<SIMD*INPUT_PRECISION> > in_simd("in_simd");
-stream<ap_uint<SIMD*INPUT_PRECISION> > out_simd("out_simd");
+    const int FOLD = FM_Channels1/PE1;
 
-StreamingDataWidthConverter_Batch<IFM_Channels*INPUT_PRECISION, SIMD*INPUT_PRECISION, IFMDim*IFMDim>(in, in_simd, numReps);
+    hls::stream<ap_uint<FM_Channels1*INPUT_PRECISION> > padded_input("padded_input");
+    hls::stream<ap_uint<PE1*INPUT_PRECISION> > aw_padded_input("aw_padded_input");
+    hls::stream<ap_uint<PE1*INPUT_PRECISION> > swg_out("swg_out");
+    hls::stream<ap_uint<PE1*INPUT_PRECISION> > pool_out("pool_out");
 
-ConvolutionInputGenerator_kernel_stride<KERNEL_DIM,
-	IFM_Channels,
-	INPUT_PRECISION,
-	IFMDim, 
-	OFMDim, 
-	SIMD,
-	STRIDE>(in_simd, out_simd, numReps, ap_resource_dflt());
-	
-StreamingDataWidthConverter_Batch<SIMD*INPUT_PRECISION, IFM_Channels*INPUT_PRECISION, KERNEL_DIM*KERNEL_DIM*OFMDim*OFMDim*IFM_Channels/SIMD>(out_simd, out, numReps);
+
+    FMPadding_Batch<IFMDim1,PoolInDim1,PADDING,FM_Channels1,FM_Channels1,ap_uint<INPUT_PRECISION> >
+        (in,padded_input, numReps) ;
+
+    StreamingDataWidthConverter_Batch<FM_Channels1*INPUT_PRECISION, 
+                                        PE1*INPUT_PRECISION, (PoolInDim1)*(PoolInDim1)>
+            (padded_input, aw_padded_input, numReps);
+    
+    ConvolutionInputGenerator_kernel_stride_dws<KERNEL_DIM, FM_Channels1,
+                            INPUT_PRECISION, PoolInDim1, OFMDim1, PE1,2>
+            (aw_padded_input, swg_out, numReps, ap_resource_dflt());
+
+    MaxPoolFunction<ap_uint<INPUT_PRECISION>,KERNEL_DIM> maxpool_fxn;
+    Pool_batch<FM_Channels1, PE1, KERNEL_DIM,
+                Slice<ap_uint<INPUT_PRECISION> >, Slice< ap_uint<INPUT_PRECISION> > >
+    (swg_out,pool_out, maxpool_fxn, OFMDim1*OFMDim1*numReps);
+
+    StreamingDataWidthConverter_Batch<PE1*INPUT_PRECISION, 
+                                    FM_Channels1*INPUT_PRECISION, OFMDim1*OFMDim1*FOLD>
+            (pool_out, out, numReps);
 
 }
-
